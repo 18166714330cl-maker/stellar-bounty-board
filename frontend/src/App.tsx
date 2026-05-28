@@ -1,4 +1,4 @@
-import { FormEvent, ReactNode, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, Suspense, lazy, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUpRight,
   Coins,
@@ -43,10 +43,14 @@ import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMe
 import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
 
 import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
-import BountyDetailPage from "./BountyDetailPage";
 import UsdAmount from "./UsdAmount";
 
 import SkeletonBountyCard from "./SkeletonBountyCard";
+import EmptyState from "./EmptyState";
+
+// Lazy-load BountyDetailPage — it is only rendered on /bounties/:id routes,
+// so deferring it keeps the initial board bundle smaller.
+const BountyDetailPage = lazy(() => import("./BountyDetailPage"));
 
 const STELLAR_PUBLIC_KEY_HINT = "Expected Stellar public key (starts with G and is 56 characters).";
 const STELLAR_PUBLIC_KEY_REGEX = /^G[A-Z2-7]{55}$/;
@@ -646,23 +650,88 @@ function App() {
     return groups;
   }, [filteredBounties, repoRoute]);
 
+  // Derive whether any filter is currently active so EmptyState knows whether
+  // to show the "Clear filters" CTA.
+  const hasActiveFilters =
+    debouncedSearchQuery.trim() !== "" ||
+    statusFilter !== "all" ||
+    minReward !== "" ||
+    maxReward !== "" ||
+    repoFilter !== "";
+
+  // Build a context-aware heading and supporting message for the empty board.
+  const { emptyStateHeading, emptyStateMessage } = useMemo((): {
+    emptyStateHeading: string;
+    emptyStateMessage: string;
+  } => {
+    // Token search: user typed something like "XLM" or "USDC"
+    const tokenMatch = debouncedSearchQuery.trim().match(/^[A-Z]{2,6}$/);
+    if (tokenMatch) {
+      return {
+        emptyStateHeading: `No ${tokenMatch[0]} bounties`,
+        emptyStateMessage: `There are no bounties denominated in ${tokenMatch[0]} right now.`,
+      };
+    }
+
+    // Status filter active
+    if (statusFilter !== "all") {
+      const label = statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
+      return {
+        emptyStateHeading: `No ${label.toLowerCase()} bounties`,
+        emptyStateMessage: `There are no bounties with status "${label.toLowerCase()}" matching your current filters.`,
+      };
+    }
+
+    // Repo filter active
+    if (repoFilter) {
+      return {
+        emptyStateHeading: "No bounties in this repo",
+        emptyStateMessage: `No bounties found for repository "${repoFilter}".`,
+      };
+    }
+
+    // Generic search query
+    if (debouncedSearchQuery.trim()) {
+      return {
+        emptyStateHeading: `No bounties found for "${debouncedSearchQuery.trim()}"`,
+        emptyStateMessage: "Try a different search term or clear your filters.",
+      };
+    }
+
+    // Reward range filter only
+    if (minReward || maxReward) {
+      return {
+        emptyStateHeading: "No bounties in this reward range",
+        emptyStateMessage: "Try widening the min/max reward range.",
+      };
+    }
+
+    // No filters at all — board is genuinely empty
+    return {
+      emptyStateHeading: "No bounties yet",
+      emptyStateMessage: "Be the first to create a bounty using the form above.",
+    };
+  }, [debouncedSearchQuery, statusFilter, repoFilter, minReward, maxReward]);
+
   if (detailId) {
     const bounty = detailBounty;
     const owner = bounty ? repoOwner(bounty.repo) : "";
     const avatarUrl = bounty ? `https://github.com/${owner}.png?size=72` : "";
 
     return (
-      <BountyDetailPage
-        bounty={bounty}
-        loading={detailLoading}
-        onBack={() => navigate("/")}
-        owner={owner}
-        avatarUrl={avatarUrl}
-        statusCopy={statusCopy}
-        actionCopy={actionCopy}
-        renderActionButton={renderActionButton}
-        formatTimestamp={formatTimestamp}
-      />
+      <Suspense fallback={<div className="empty-state">Loading bounty...</div>}>
+        <BountyDetailPage
+          bounty={bounty}
+          loading={detailLoading}
+          onBack={() => navigate("/")}
+          owner={owner}
+          avatarUrl={avatarUrl}
+          statusCopy={statusCopy}
+          actionCopy={actionCopy}
+          renderActionButton={renderActionButton}
+          formatTimestamp={formatTimestamp}
+        />
+      </Suspense>
     );
   }
 
@@ -1292,28 +1361,12 @@ function App() {
                   ))}
                 </div>
               ) : (
-                <div className="empty-state">
-                  <div className="empty-state__content">
-                    <h3>No bounties found</h3>
-                    <p>
-                      {debouncedSearchQuery && (
-                        <>No bounties match "<strong>{debouncedSearchQuery}</strong>"</>
-                      ) || statusFilter !== "all" || minReward || maxReward || repoFilter ? (
-                        <>No bounties match the current filters</>
-                      ) : (
-                        <>No bounties available yet</>
-                      )}
-                    </p>
-                    <div className="empty-state__suggestions">
-                      <p><strong>Suggestions:</strong></p>
-                      <ul>
-                        <li>Try adjusting your search terms or filters</li>
-                        <li>Check back later for new bounties</li>
-                        <li>Browse all repositories to see available opportunities</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
+                <EmptyState
+                  heading={emptyStateHeading}
+                  message={emptyStateMessage}
+                  hasFilters={hasActiveFilters}
+                  onClearFilters={clearFilters}
+                />
               )}
             </section>
           </main>
