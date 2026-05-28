@@ -39,7 +39,7 @@ import SubmissionChecklistModal, { type SubmissionFormData } from "./SubmissionC
 import { BountyRecommendation, ContributorProfile, createDefaultProfile, generateRecommendations, updateProfileFromBounties } from "./recommendations";
 import RecommendedBounties from "./RecommendedBounties";
 import { statusCopy, actionCopy, readInitialFilters, FilterState, statusOptions, statusGlossary, sortOptions } from "./constants";
-import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMetrics, getUniqueRepos, getRepoMetrics, sortBounties, debounce, SortOption, SortState, xlmToUsd } from "./utils";
+import { filterBounties, getRewardBounds, getActiveRewardLabel, getContributorMetrics, getUniqueRepos, getUniqueTokenSymbols, getRepoMetrics, sortBounties, debounce, SortOption, SortState, xlmToUsd } from "./utils";
 import { Bounty, CreateBountyPayload, OpenIssue, BountyStatus } from "./types";
 
 import GitHubIssuePreviewCard from "./GitHubIssuePreviewCard";
@@ -322,6 +322,7 @@ function App() {
   const [minReward, setMinReward] = useState(initialFilters.minReward);
   const [maxReward, setMaxReward] = useState(initialFilters.maxReward);
   const [repoFilter, setRepoFilter] = useState(initialFilters.repoFilter);
+  const [tokenFilter, setTokenFilter] = useState(initialFilters.tokenFilter);
   const [sortOption, setSortOption] = useState(initialFilters.sortOption);
   const [sortDirection, setSortDirection] = useState(initialFilters.sortDirection);
   const [pathname, setPathname] = useState(window.location.pathname);
@@ -421,6 +422,10 @@ function App() {
       params.set("repo", repoFilter);
     }
 
+    if (tokenFilter !== "") {
+      params.set("tokenSymbol", tokenFilter);
+    }
+
     if (sortOption !== "newest") {
       params.set("sort", sortOption);
     }
@@ -432,7 +437,7 @@ function App() {
     const nextSearch = params.toString();
     const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ""}${window.location.hash}`;
     window.history.replaceState(null, "", nextUrl);
-  }, [maxReward, minReward, pathname, debouncedSearchQuery, statusFilter, repoFilter, sortOption, sortDirection]);
+  }, [maxReward, minReward, pathname, debouncedSearchQuery, statusFilter, repoFilter, tokenFilter, sortOption, sortDirection]);
 
   useEffect(() => {
     function handlePopState() {
@@ -446,6 +451,7 @@ function App() {
       setMinReward(filters.minReward);
       setMaxReward(filters.maxReward);
       setRepoFilter(filters.repoFilter);
+      setTokenFilter(filters.tokenFilter);
       setSortOption(filters.sortOption);
       setSortDirection(filters.sortDirection);
     }
@@ -476,6 +482,10 @@ function App() {
     return getUniqueRepos(bounties);
   }, [bounties]);
 
+  const uniqueTokens = useMemo(() => {
+    return getUniqueTokenSymbols(bounties);
+  }, [bounties]);
+
   const rewardBounds = useMemo(() => {
     return getRewardBounds(bounties);
   }, [bounties]);
@@ -499,6 +509,7 @@ function App() {
     setMinReward("");
     setMaxReward("");
     setRepoFilter("");
+    setTokenFilter("");
     setSortOption("newest");
     setSortDirection("desc");
   }
@@ -624,13 +635,14 @@ function App() {
       minReward,
       maxReward,
       repoFilter: effectiveRepoFilter,
+      tokenFilter,
       sortOption,
       sortDirection,
     });
 
     // Apply sorting
     return sortBounties(filtered, { option: sortOption, direction: sortDirection });
-  }, [bounties, debouncedSearchQuery, statusFilter, minReward, maxReward, repoFilter, repoRoute, sortOption, sortDirection]);
+  }, [bounties, debouncedSearchQuery, statusFilter, minReward, maxReward, repoFilter, tokenFilter, repoRoute, sortOption, sortDirection]);
 
   const groupedBounties = useMemo(() => {
     if (repoRoute) {
@@ -1068,6 +1080,25 @@ function App() {
                         {uniqueRepos.map((repo) => (
                           <option key={repo} value={repo}>
                             {repo}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </label>
+
+                  <label className="filter-field">
+                    <span>Token</span>
+                    <div className="input-with-icon">
+                      <Coins size={16} />
+                      <select
+                        aria-label="Filter by token"
+                        value={tokenFilter}
+                        onChange={(event) => setTokenFilter(event.target.value)}
+                      >
+                        <option value="">All Tokens</option>
+                        {uniqueTokens.map((token) => (
+                          <option key={token} value={token}>
+                            {token}
                           </option>
                         ))}
                       </select>
