@@ -81,6 +81,29 @@ under a specific name, handle, or organisation, please include that preference i
 
 ---
 
+## Logging best practices
+
+The backend logger (`backend/src/logger.ts`, pino) redacts secrets two ways so
+Stellar private keys and credentials never reach log output (#381):
+
+- **Path redaction** masks named fields at any depth: `password`, `secret`,
+  `token`, `apiKey`/`api_key`, `Authorization`, request `authorization` /
+  `cookie` headers, and the Stellar key fields `secretKey`, `privateKey`,
+  `seed`.
+- **Value redaction** scrubs any string matching a Stellar secret seed
+  (`^S[0-9A-Z]{55}$`) wherever it appears — including free-form error messages
+  and nested objects — via a `logMethod` hook, replacing it with
+  `[redacted-secret-key]`.
+
+When adding logging:
+
+- Never log a raw signed transaction, secret seed, or keypair. Log the public
+  key (`G…`) or an opaque identifier instead.
+- Prefer structured fields (`logger.info({ field }, "msg")`) over string
+  interpolation so path redaction can apply.
+- If you introduce a new field name that may carry a secret, add it to the
+  `redact.paths` list in `backend/src/logger.ts`.
+
 ## Automated Security Analysis
 
 This repository runs [GitHub CodeQL](https://codeql.github.com/) on the `javascript` language
